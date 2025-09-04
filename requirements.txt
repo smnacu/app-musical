@@ -1,0 +1,8 @@
+PySide6==6.6.1
+pydub==0.25.1
+librosa==0.10.1
+soundfile==0.12.1
+numpy==1.26.4
+scipy==1.11.4
+mutagen==1.47.0
+pytest==8.2.1
