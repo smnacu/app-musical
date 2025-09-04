@@ -37,9 +37,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setPalette(palette)
 
         # Estado de la app
-        self.audio: Optional[AudioData] = None
+        self.original_audio: Optional[AudioData] = None
         self.lyrics: Optional[Lyrics] = None
-        self.semitones: int = 0
         self.meta = TrackMetadata()
 
         # Widgets principales
@@ -59,10 +58,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.spin_semitones = QtWidgets.QSpinBox()
         self.spin_semitones.setRange(-12, 12)
         self.spin_semitones.setValue(0)
-        self.btn_apply_pitch = QtWidgets.QPushButton("Aplicar cambio de tonalidad")
+        self.spin_semitones.setToolTip("Define el cambio de tono que se aplicará al exportar")
         pitch_layout.addWidget(QtWidgets.QLabel("Semitonos:"))
         pitch_layout.addWidget(self.spin_semitones)
-        pitch_layout.addWidget(self.btn_apply_pitch)
         layout.addLayout(pitch_layout)
 
         # Sección: metadatos
@@ -110,7 +108,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Conexiones
         self.btn_load_audio.clicked.connect(self.on_load_audio)
-        self.btn_apply_pitch.clicked.connect(self.on_apply_pitch)
         self.btn_select_cover.clicked.connect(self.on_select_cover)
         self.btn_load_lyrics.clicked.connect(self.on_load_lyrics)
         self.btn_export_wav.clicked.connect(lambda: self.on_export("wav"))
@@ -124,22 +121,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if not path:
             return
         try:
-            self.audio = load_audio(path)
+            self.original_audio = load_audio(path)
             self.lbl_audio.setText(f"Cargado: {path}")
             logger.info("Audio cargado: %s", path)
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"No se pudo cargar el audio:\n{e}")
-
-    def on_apply_pitch(self) -> None:
-        if not self.audio:
-            QtWidgets.QMessageBox.warning(self, "Atención", "Carga un audio primero.")
-            return
-        try:
-            self.semitones = int(self.spin_semitones.value())
-            self.audio = change_pitch_semitones(self.audio, self.semitones)
-            logger.info("Aplicado cambio de tonalidad: %s semitonos", self.semitones)
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", f"No se pudo aplicar el cambio:\n{e}")
 
     def on_select_cover(self) -> None:
         path = open_file_dialog(self, "Seleccionar carátula", FileFilters.image)
@@ -160,7 +146,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, "Error", f"No se pudo cargar la letra:\n{e}")
 
     def on_export(self, fmt: str) -> None:
-        if not self.audio:
+        if not self.original_audio:
             QtWidgets.QMessageBox.warning(self, "Atención", "Carga un audio primero.")
             return
 
@@ -172,7 +158,18 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         try:
-            export_audio(self.audio, out_path, format_hint=fmt)
+            # Determinar si hay que aplicar cambio de tono
+            audio_to_export = self.original_audio
+            semitones = int(self.spin_semitones.value())
+
+            if semitones != 0:
+                logger.info("Aplicando cambio de %d semitonos para la exportación...", semitones)
+                # Aplicar el cambio de forma no destructiva, desde el audio original
+                audio_to_export = change_pitch_semitones(self.original_audio, semitones)
+
+            # Exportar el audio (original o modificado)
+            export_audio(audio_to_export, out_path, format_hint=fmt)
+
             # Escribir metadatos si corresponde
             try:
                 set_metadata(out_path, self.meta)
@@ -182,14 +179,15 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "Listo", f"Archivo exportado en {out_path}")
             logger.info("Exportado: %s", out_path)
         except Exception as e:
+            logger.critical("No se pudo exportar el audio: %s", e, exc_info=True)
             QtWidgets.QMessageBox.critical(self, "Error", f"No se pudo exportar:\n{e}")
 
     def on_export_original(self) -> None:
-        if not self.audio or not self.audio.path:
+        if not self.original_audio or not self.original_audio.path:
             QtWidgets.QMessageBox.warning(self, "Atención", "Carga un audio primero.")
             return
         # Deducir formato original por extensión
-        ext = self.audio.path.split(".")[-1].lower()
+        ext = self.original_audio.path.split(".")[-1].lower()
         self.on_export(ext)
 
 
